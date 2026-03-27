@@ -40,6 +40,24 @@ def _as_int(name: str, default: int) -> int:
 		return default
 
 
+def _as_csv(name: str) -> list[str]:
+	raw = os.getenv(name, "")
+	return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _as_csv_many(*names: str) -> list[str]:
+	values: list[str] = []
+	seen: set[str] = set()
+
+	for name in names:
+		for item in _as_csv(name):
+			if item not in seen:
+				seen.add(item)
+				values.append(item)
+
+	return values
+
+
 _load_dotenv_from_project_root()
 
 AUDIO_SAMPLE_RATE = _as_int("AUDIO_SAMPLE_RATE", 16000)
@@ -56,3 +74,4 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 OUTPUTS_DIR = os.getenv("OUTPUTS_DIR", "outputs")
 TEMP_DIR = os.getenv("TEMP_DIR", "temp")
+CORS_ALLOWED_ORIGINS = _as_csv_many("CORS_ALLOWED_ORIGINS", "ALLOWED_ORIGINS")

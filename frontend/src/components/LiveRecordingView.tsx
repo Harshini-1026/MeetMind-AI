@@ -1,15 +1,110 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Mic, MicOff, Pause, Square, Clock, ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { getLiveTranscript, runPipeline, startRecording, stopRecording } from "@/lib/api";
+import { saveLastPipeline } from "@/lib/meeting-session";
 
 interface LiveRecordingViewProps {
   onBack: () => void;
 }
 
 const LiveRecordingView = ({ onBack }: LiveRecordingViewProps) => {
+  const navigate = useNavigate();
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [statusText, setStatusText] = useState("");
+  const [errorText, setErrorText] = useState("");
+  const [liveTranscript, setLiveTranscript] = useState("");
+
+  useEffect(() => {
+    if (!isRecording || isPaused) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setElapsedSeconds((value) => value + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [isPaused, isRecording]);
+
+  useEffect(() => {
+    if (!isRecording || isPaused) {
+      return;
+    }
+
+    const poller = window.setInterval(async () => {
+      try {
+        const result = await getLiveTranscript();
+        setLiveTranscript(result.transcript || "");
+      } catch {
+        // Keep recording UI responsive even if polling fails.
+      }
+    }, 1500);
+
+    return () => window.clearInterval(poller);
+  }, [isPaused, isRecording]);
+
+  const formatClock = (seconds: number): string => {
+    const h = Math.floor(seconds / 3600)
+      .toString()
+      .padStart(2, "0");
+    const m = Math.floor((seconds % 3600) / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = (seconds % 60).toString().padStart(2, "0");
+    return `${h}:${m}:${s}`;
+  };
+
+  const handleRecordToggle = async () => {
+    setErrorText("");
+
+    if (!isRecording) {
+      try {
+        setStatusText("Starting recording...");
+        await startRecording();
+        setLiveTranscript("");
+        setElapsedSeconds(0);
+        setIsPaused(false);
+        setIsRecording(true);
+        setStatusText("Recording in progress.");
+      } catch (error) {
+        setStatusText("");
+        setErrorText(error instanceof Error ? error.message : "Could not start recording.");
+      }
+      return;
+    }
+
+    await handleStopAndProcess();
+  };
+
+  const handleStopAndProcess = async () => {
+    if (!isRecording) {
+      return;
+    }
+
+    setErrorText("");
+
+    try {
+      setStatusText("Stopping recording...");
+      const stopResult = await stopRecording();
+      setIsRecording(false);
+      setIsPaused(false);
+
+      setStatusText("Running transcript, diarization, and summary pipeline...");
+      const pipelineResult = await runPipeline({ wavPath: stopResult.wav_path });
+      saveLastPipeline(pipelineResult);
+
+      setStatusText("Done. Opening summary.");
+      navigate("/summary");
+    } catch (error) {
+      setStatusText("");
+      setErrorText(error instanceof Error ? error.message : "Could not stop recording.");
+    }
+  };
 
   return (
     <div className="pb-24">
@@ -43,7 +138,7 @@ const LiveRecordingView = ({ onBack }: LiveRecordingViewProps) => {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => { setIsRecording(!isRecording); setIsPaused(false); }}
+            onClick={handleRecordToggle}
             className={`relative z-10 w-32 h-32 rounded-full flex items-center justify-center transition-all duration-500 ${
               isRecording
                 ? "bg-destructive/15 border-2 border-destructive glow-active"
@@ -60,7 +155,7 @@ const LiveRecordingView = ({ onBack }: LiveRecordingViewProps) => {
 
         <div className="mt-8 flex items-center gap-2">
           <Clock className="w-4 h-4 text-muted-foreground" />
-          <span className="text-4xl font-heading font-bold text-foreground tabular-nums tracking-tight">00:00:00</span>
+          <span className="text-4xl font-heading font-bold text-foreground tabular-nums tracking-tight">{formatClock(elapsedSeconds)}</span>
         </div>
 
         <p className="text-muted-foreground mt-2 text-sm">
@@ -83,13 +178,23 @@ const LiveRecordingView = ({ onBack }: LiveRecordingViewProps) => {
             </Button>
             <Button
               variant="destructive"
-              onClick={() => { setIsRecording(false); setIsPaused(false); }}
+              onClick={handleStopAndProcess}
               className="rounded-xl"
             >
               <Square className="w-4 h-4 mr-2" />
               Stop & Save
             </Button>
           </motion.div>
+        )}
+
+        {statusText && <p className="mt-6 text-xs text-muted-foreground">{statusText}</p>}
+        {errorText && <p className="mt-2 text-xs text-destructive">{errorText}</p>}
+
+        {liveTranscript && (
+          <div className="mt-6 w-full max-w-2xl rounded-xl border border-border/60 bg-background/40 p-4">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Live Transcript</p>
+            <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">{liveTranscript}</p>
+          </div>
         )}
 
         {isRecording && !isPaused && (

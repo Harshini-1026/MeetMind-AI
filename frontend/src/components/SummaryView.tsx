@@ -1,48 +1,50 @@
 import { motion } from "framer-motion";
 import { FileText, Users, Clock, Calendar, ChevronRight, ArrowLeft, Sparkles } from "lucide-react";
+import { getLastPipeline } from "@/lib/meeting-session";
 
 interface SummaryViewProps {
   onBack: () => void;
 }
 
-const meeting = {
-  name: "Q3 Business Review & Q4 Planning",
-  date: "March 25, 2026",
-  duration: "24 min 58 sec",
-  persons: 3,
-  executive:
-    "The team reviewed Q3 performance metrics showing a 15% increase in user engagement and a 20% decrease in support tickets. Three key focus areas were identified for Q4: platform performance optimization, onboarding flow improvements, and third-party integrations. Action items were assigned with deadlines set for mid-April.",
-  sections: [
-    {
-      topic: "Q3 Performance Review",
-      points: [
-        "User engagement increased by 15% compared to Q2",
-        "Support tickets decreased by 20% following UX improvements",
-        "New features launched in July contributed to higher retention rates",
-        "Customer satisfaction scores improved to 4.6/5.0",
-      ],
-    },
-    {
-      topic: "Q4 Roadmap Priorities",
-      points: [
-        "Performance optimization — reduce load times by 30%",
-        "Redesign onboarding flow for new users",
-        "Build integrations with Slack, Jira, and Notion",
-        "Launch premium tier with advanced analytics",
-      ],
-    },
-    {
-      topic: "Action Items",
-      points: [
-        "Speaker 1: Compile customer feedback report by April 5",
-        "Speaker 2: Draft Q4 marketing plan by April 10",
-        "Speaker 3: Prepare technical roadmap and resource allocation by April 15",
-      ],
-    },
-  ],
-};
+function parseSummaryText(summary: string) {
+  const text = (summary || "").trim();
+
+  const titleMatch = text.match(/Title:\s*(.+)/i);
+  const durationMatch = text.match(/Duration:\s*(.+)/i);
+  const speakersMatch = text.match(/No of Speakers:\s*(\d+)/i);
+  const execMatch = text.match(/Executive Summary:\s*([\s\S]*?)\n\s*Key Discussion Points:/i);
+  const keyMatch = text.match(/Key Discussion Points:\s*([\s\S]*)$/i);
+
+  const keyPoints = (keyMatch?.[1] || "")
+    .split("\n")
+    .map((line) => line.replace(/^[-*\d.)\s]+/, "").trim())
+    .filter(Boolean);
+
+  return {
+    title: titleMatch?.[1]?.trim() || "Meeting Notes",
+    duration: durationMatch?.[1]?.trim() || "0:00",
+    speakers: Number(speakersMatch?.[1] || 0),
+    executive: execMatch?.[1]?.trim() || "No executive summary generated yet.",
+    keyPoints,
+  };
+}
 
 const SummaryView = ({ onBack }: SummaryViewProps) => {
+  const pipeline = getLastPipeline();
+  const parsed = parseSummaryText(pipeline?.summary || "");
+
+  const meetingName = pipeline?.meeting_title || parsed.title;
+  const duration = pipeline?.duration || parsed.duration;
+  const participants = pipeline?.speaker_count || parsed.speakers;
+  const meetingDate = new Date().toLocaleDateString();
+
+  const sections = [
+    {
+      topic: "Key Discussion Points",
+      points: parsed.keyPoints.length > 0 ? parsed.keyPoints : ["No key discussion points available yet."],
+    },
+  ];
+
   return (
     <div className="pb-24">
       <button onClick={onBack} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6 text-sm">
@@ -56,12 +58,12 @@ const SummaryView = ({ onBack }: SummaryViewProps) => {
             <Sparkles className="w-4 h-4 text-camel-DEFAULT" />
             <span className="text-xs font-medium text-camel-DEFAULT tracking-wider uppercase">AI Generated Summary</span>
           </div>
-          <h2 className="text-2xl md:text-3xl font-heading font-extrabold text-foreground">{meeting.name}</h2>
+          <h2 className="text-2xl md:text-3xl font-heading font-extrabold text-foreground">{meetingName}</h2>
           <div className="flex flex-wrap gap-5 mt-5">
             {[
-              { icon: Calendar, text: meeting.date },
-              { icon: Clock, text: meeting.duration },
-              { icon: Users, text: `${meeting.persons} Participants` },
+              { icon: Calendar, text: meetingDate },
+              { icon: Clock, text: duration },
+              { icon: Users, text: `${participants} Participants` },
             ].map((meta, i) => (
               <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
                 <meta.icon className="w-4 h-4 text-camel-DEFAULT" />
@@ -70,6 +72,12 @@ const SummaryView = ({ onBack }: SummaryViewProps) => {
             ))}
           </div>
         </div>
+
+        {!pipeline && (
+          <div className="rounded-2xl border border-border/60 bg-background/40 p-5 text-sm text-muted-foreground">
+            No summary generated yet. Process an upload or stop a live recording to view AI output here.
+          </div>
+        )}
 
         {/* Executive summary */}
         <motion.div
@@ -84,25 +92,25 @@ const SummaryView = ({ onBack }: SummaryViewProps) => {
             </div>
             <h3 className="text-lg font-heading font-bold text-foreground">Executive Summary</h3>
           </div>
-          <p className="text-foreground/80 leading-relaxed text-[15px]">{meeting.executive}</p>
+          <p className="text-foreground/80 leading-relaxed text-[15px]">{parsed.executive}</p>
         </motion.div>
 
         {/* Detailed sections */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {meeting.sections.map((section, i) => (
+        <div className="w-full flex flex-col items-center">
+          {sections.map((section, i) => (
             <motion.div
               key={section.topic}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 + i * 0.1 }}
-              className="rounded-2xl bento-glass noise-overlay p-6 flex flex-col"
+              className="w-full max-w-5xl rounded-2xl bento-glass noise-overlay p-6 flex flex-col mb-10"
             >
               <h4 className="font-heading font-bold text-camel-DEFAULT text-sm mb-4 tracking-wide">{section.topic}</h4>
               <ul className="space-y-3 flex-1">
                 {section.points.map((point, j) => (
-                  <li key={j} className="flex items-start gap-2 text-sm text-foreground/75 leading-relaxed">
+                  <li key={j} className="flex items-start gap-4 text-sm text-foreground/75 leading-relaxed">
                     <ChevronRight className="w-3.5 h-3.5 text-olive mt-1 flex-shrink-0" />
-                    <span>{point}</span>
+                    <span className="flex-1">{point}</span>
                   </li>
                 ))}
               </ul>

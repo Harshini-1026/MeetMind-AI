@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 interface FloatingDockProps {
   activeModule: string;
   onModuleChange: (module: string) => void;
+  className?: string;
+  isFixed?: boolean;
 }
 
 const dockItems = [
@@ -15,13 +17,13 @@ const dockItems = [
   { id: "summary", label: "Summary", icon: FileText },
 ];
 
-const FloatingDock = ({ activeModule, onModuleChange }: FloatingDockProps) => {
+const FloatingDock = ({ activeModule, onModuleChange, className, isFixed = true }: FloatingDockProps) => {
   return (
     <motion.div
       initial={{ y: 80, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ delay: 0.5, type: "spring", stiffness: 200, damping: 25 }}
-      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
+      className={cn(isFixed ? "fixed bottom-6 left-1/2 -translate-x-1/2 z-50" : "z-40", className)}
     >
       <div className="dock-blur rounded-2xl px-2 py-2 flex items-center gap-1">
         {dockItems.map((item) => {

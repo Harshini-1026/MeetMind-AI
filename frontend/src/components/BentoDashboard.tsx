@@ -82,10 +82,10 @@ const BentoDashboard = ({ onModuleChange }: BentoDashboardProps) => {
         className="col-span-12 md:col-span-7 row-span-2 grid grid-cols-2 gap-4"
       >
         {[
-          { label: "Meetings", value: "24", sub: "+3 this week", color: "camel" },
-          { label: "Hours", value: "18.5h", sub: "+2.1h today", color: "olive" },
-          { label: "Speakers", value: "47", sub: "Identified", color: "hunter" },
-          { label: "Summaries", value: "22", sub: "92% done", color: "camel" },
+          { label: "Live Capture", value: "Ready", sub: "Mic pipeline available", color: "camel" },
+          { label: "Upload", value: "MP3 MP4 WAV", sub: "Auto converts to WAV", color: "olive" },
+          { label: "Speaker Split", value: "Diarization", sub: "Timeline + turns", color: "hunter" },
+          { label: "Exports", value: "MD PDF DOCX", sub: "From summary view", color: "camel" },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}

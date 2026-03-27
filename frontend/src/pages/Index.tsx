@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useLocation, useNavigate } from "react-router-dom";
 import FloatingDock from "@/components/FloatingDock";
 import BentoDashboard from "@/components/BentoDashboard";
 import LiveRecordingView from "@/components/LiveRecordingView";
@@ -7,10 +7,32 @@ import UploadFileView from "@/components/UploadFileView";
 import DiarizationView from "@/components/DiarizationView";
 import SummaryView from "@/components/SummaryView";
 
-const Index = () => {
-  const [activeModule, setActiveModule] = useState("dashboard");
+const moduleToRoute: Record<string, string> = {
+  dashboard: "/",
+  recording: "/recording",
+  upload: "/upload",
+  diarization: "/diarization",
+  summary: "/summary",
+};
 
-  const goBack = () => setActiveModule("dashboard");
+function resolveModule(pathname: string): string {
+  if (pathname === "/recording") return "recording";
+  if (pathname === "/upload") return "upload";
+  if (pathname === "/diarization") return "diarization";
+  if (pathname === "/summary") return "summary";
+  return "dashboard";
+}
+
+const Index = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeModule = resolveModule(location.pathname);
+
+  const setActiveModule = (module: string) => {
+    navigate(moduleToRoute[module] || "/");
+  };
+
+  const goBack = () => navigate("/");
 
   return (
     <div className="min-h-screen bg-background mesh-bg">
@@ -27,12 +49,22 @@ const Index = () => {
             {activeModule === "recording" && <LiveRecordingView onBack={goBack} />}
             {activeModule === "upload" && <UploadFileView onBack={goBack} />}
             {activeModule === "diarization" && <DiarizationView onBack={goBack} />}
-            {activeModule === "summary" && <SummaryView onBack={goBack} />}
+            {activeModule === "summary" && (
+              <div className="flex flex-col items-center">
+                <SummaryView onBack={goBack} />
+                <FloatingDock
+                  activeModule={activeModule}
+                  onModuleChange={setActiveModule}
+                  isFixed={false}
+                  className="mt-1"
+                />
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
 
-      <FloatingDock activeModule={activeModule} onModuleChange={setActiveModule} />
+      {activeModule !== "summary" && <FloatingDock activeModule={activeModule} onModuleChange={setActiveModule} />}
     </div>
   );
 };

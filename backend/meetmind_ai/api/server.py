@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from queue import Queue
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from pydub import AudioSegment
 from werkzeug.utils import secure_filename
@@ -19,13 +19,18 @@ from meetmind_ai.core.stt_engine import STTEngine
 from meetmind_ai.core.summarizer import Summarizer
 
 app = Flask(__name__)
-CORS(app)
+
+cors_origins = settings.CORS_ALLOWED_ORIGINS or ["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:5173", "http://127.0.0.1:5173"]
+CORS(
+    app,
+    resources={
+        r"/api/*": {"origins": cors_origins},
+        r"/": {"origins": cors_origins},
+    },
+)
 
 os.makedirs(settings.TEMP_DIR, exist_ok=True)
 os.makedirs(settings.OUTPUTS_DIR, exist_ok=True)
-
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-WEB_DIR = os.path.join(PROJECT_ROOT, "web")
 
 app.config["AUDIO_CAPTURE"] = None
 app.config["AUDIO_QUEUE"] = Queue()
@@ -252,10 +257,11 @@ def _extract_summary_sections(model_summary: str):
 
 @app.get("/")
 def index():
-    tester_path = os.path.join(WEB_DIR, "backend_tester.html")
-    if os.path.isfile(tester_path):
-        return send_file(tester_path)
-    return jsonify({"error": "backend_tester.html not found in web directory."}), 404
+    return jsonify({
+        "service": "meetmind-ai-backend",
+        "status": "ok",
+        "api_base": "/api",
+    })
 
 
 @app.post("/api/start-recording")

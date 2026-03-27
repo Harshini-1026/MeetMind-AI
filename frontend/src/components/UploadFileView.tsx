@@ -1,12 +1,16 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, FileAudio, FileVideo, X, CheckCircle, ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { runPipeline, uploadAudio } from "@/lib/api";
+import { saveLastPipeline } from "@/lib/meeting-session";
 
 interface UploadedFile {
   name: string;
   size: string;
   type: string;
+  raw: File;
 }
 
 interface UploadFileViewProps {
@@ -14,8 +18,12 @@ interface UploadFileViewProps {
 }
 
 const UploadFileView = ({ onBack }: UploadFileViewProps) => {
+  const navigate = useNavigate();
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [statusText, setStatusText] = useState("");
+  const [errorText, setErrorText] = useState("");
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -30,8 +38,36 @@ const UploadFileView = ({ onBack }: UploadFileViewProps) => {
         name: f.name,
         size: `${(f.size / (1024 * 1024)).toFixed(1)} MB`,
         type: f.name.split(".").pop()?.toUpperCase() || "",
+        raw: f,
       }));
     setFiles((prev) => [...prev, ...mapped]);
+  };
+
+  const processFiles = async () => {
+    if (files.length === 0 || isProcessing) {
+      return;
+    }
+
+    setIsProcessing(true);
+    setErrorText("");
+
+    try {
+      const first = files[0];
+      setStatusText(`Uploading ${first.name}...`);
+      const uploadResult = await uploadAudio(first.raw);
+
+      setStatusText("Running transcript, diarization, and summary pipeline...");
+      const pipelineResult = await runPipeline({ wavPath: uploadResult.wav_path });
+      saveLastPipeline(pipelineResult);
+
+      setStatusText("Done. Opening summary.");
+      navigate("/summary");
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "Upload failed.");
+      setStatusText("");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -111,9 +147,15 @@ const UploadFileView = ({ onBack }: UploadFileViewProps) => {
                   </motion.div>
                 );
               })}
-              <Button className="gradient-gold-bright text-primary-foreground hover:opacity-90 rounded-xl mt-2">
-                Process {files.length} file{files.length > 1 ? "s" : ""}
+              <Button
+                onClick={processFiles}
+                disabled={isProcessing}
+                className="gradient-gold-bright text-primary-foreground hover:opacity-90 rounded-xl mt-2"
+              >
+                {isProcessing ? "Processing..." : `Process ${files.length} file${files.length > 1 ? "s" : ""}`}
               </Button>
+              {statusText && <p className="text-xs text-muted-foreground">{statusText}</p>}
+              {errorText && <p className="text-xs text-destructive">{errorText}</p>}
             </motion.div>
           )}
         </AnimatePresence>
