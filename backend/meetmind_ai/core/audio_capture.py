@@ -3,7 +3,10 @@ import wave
 from queue import Queue
 from typing import Optional
 
-import pyaudio
+try:
+    import pyaudio
+except Exception:  # pragma: no cover - runtime/platform dependent import
+    pyaudio = None
 
 from meetmind_ai.config.settings import AUDIO_CHANNELS, AUDIO_CHUNK_SIZE, AUDIO_SAMPLE_RATE
 
@@ -24,9 +27,17 @@ class AudioCapture:
         self._stop_event = threading.Event()
         self._recording_thread: Optional[threading.Thread] = None
         self._frames_lock = threading.Lock()
+        self._is_available = pyaudio is not None
+
+        if not self._is_available:
+            print("[AudioCapture] PyAudio is not installed. Live recording is unavailable on this environment.")
 
     def start_recording(self) -> None:
         """Open the microphone stream and start a daemon reader thread."""
+        if not self._is_available:
+            print("[AudioCapture] Cannot start recording: PyAudio is unavailable.")
+            return
+
         if self._recording_thread and self._recording_thread.is_alive():
             print("[AudioCapture] Recording is already running.")
             return
@@ -76,7 +87,7 @@ class AudioCapture:
         """Save all captured frames to a WAV file."""
         try:
             sample_width = 2
-            if self._audio_interface is not None:
+            if self._audio_interface is not None and pyaudio is not None:
                 sample_width = self._audio_interface.get_sample_size(pyaudio.paInt16)
 
             with self._frames_lock:
