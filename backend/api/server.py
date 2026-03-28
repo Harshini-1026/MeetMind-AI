@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from queue import Queue
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 from pydub import AudioSegment
 from werkzeug.utils import secure_filename
@@ -31,6 +31,20 @@ CORS(
 
 os.makedirs(settings.TEMP_DIR, exist_ok=True)
 os.makedirs(settings.OUTPUTS_DIR, exist_ok=True)
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+FRONTEND_BUILD_CANDIDATES = [
+    os.path.join(PROJECT_ROOT, "frontend", "dist"),
+    os.path.join(PROJECT_ROOT, "frontend", "build"),
+]
+FRONTEND_BUILD_DIR = next(
+    (
+        candidate
+        for candidate in FRONTEND_BUILD_CANDIDATES
+        if os.path.isfile(os.path.join(candidate, "index.html"))
+    ),
+    None,
+)
 
 app.config["AUDIO_CAPTURE"] = None
 app.config["AUDIO_QUEUE"] = Queue()
@@ -257,11 +271,29 @@ def _extract_summary_sections(model_summary: str):
 
 @app.get("/")
 def index():
+    if FRONTEND_BUILD_DIR:
+        return send_from_directory(FRONTEND_BUILD_DIR, "index.html")
+
     return jsonify({
         "service": "meetmind-ai-backend",
         "status": "ok",
         "api_base": "/api",
     })
+
+
+@app.get("/<path:path>")
+def frontend(path: str):
+    if path.startswith("api/"):
+        return jsonify({"error": "Not found"}), 404
+
+    if not FRONTEND_BUILD_DIR:
+        return jsonify({"error": "Frontend build not found. Build frontend before deploy."}), 404
+
+    requested_file = os.path.join(FRONTEND_BUILD_DIR, path)
+    if os.path.isfile(requested_file):
+        return send_from_directory(FRONTEND_BUILD_DIR, path)
+
+    return send_from_directory(FRONTEND_BUILD_DIR, "index.html")
 
 
 @app.post("/api/start-recording")

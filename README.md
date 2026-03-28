@@ -53,7 +53,7 @@ Frontend:
 
 ## Prerequisites
 
-- Python 3.11.x (pinned for deploy compatibility in backend/.python-version)
+- Python 3.14.x (pinned for deploy compatibility in backend/.python-version)
 - Node.js 18+ and npm
 - FFmpeg installed and available in PATH (required by pydub for media conversion)
 
@@ -114,7 +114,7 @@ From the backend folder:
 Commands:
 
 - Windows PowerShell:
-  - py -3.11 -m venv .venv
+  - py -3.14 -m venv .venv
   - .\.venv\Scripts\Activate.ps1
   - pip install -r requirements.txt
   - py app.py
@@ -160,11 +160,10 @@ If deploying backend to Render:
 - Root directory: backend
 - Build command: pip install -r requirements.txt
 - Start command: python app.py
-- Python version: controlled by backend/.python-version (3.11.11)
+- Python version: controlled by backend/.python-version (3.14.3)
 
 Important:
 
-- Python 3.14 may fail with torch version constraints used by this project.
 - PyAudio is Windows-only in requirements, so Linux deploys can build successfully.
 
 If deploying frontend separately:
@@ -182,7 +181,7 @@ Generated artifacts are stored in backend/outputs, including:
 ## Troubleshooting
 
 - Build fails on torch version:
-  - Ensure Python 3.11 is used in backend deploy.
+  - Ensure Python 3.14.3 is used in backend deploy.
 - Live recording does not work on server:
   - Live mic capture is intended for local environments with audio hardware and PyAudio.
 - Upload conversion fails:
