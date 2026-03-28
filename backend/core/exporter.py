@@ -6,7 +6,7 @@ from docx import Document
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
-from meetmind_ai.config.settings import OUTPUTS_DIR
+from config.settings import OUTPUTS_DIR
 
 
 class Exporter:

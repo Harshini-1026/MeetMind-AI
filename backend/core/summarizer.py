@@ -1,6 +1,6 @@
 from groq import Groq
 
-from meetmind_ai.config.settings import GROQ_API_KEY
+from config.settings import GROQ_API_KEY
 
 
 class Summarizer:
