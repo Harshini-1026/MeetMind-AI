@@ -1,7 +1,7 @@
 import os
 from typing import Dict, List, Optional
 
-from meetmind_ai.config.settings import HUGGINGFACE_TOKEN
+from config.settings import HUGGINGFACE_TOKEN
 
 
 class Diarization:

@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 from faster_whisper import WhisperModel
 
-from meetmind_ai.config.settings import (
+from config.settings import (
     AUDIO_CHANNELS,
     AUDIO_SAMPLE_RATE,
     WHISPER_COMPUTE_TYPE,

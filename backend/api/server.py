@@ -1,22 +1,28 @@
 import os
 import json
 import re
+import shutil
+import subprocess
 from datetime import datetime
 from queue import Queue
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
-from pydub import AudioSegment
 from werkzeug.utils import secure_filename
 
-from meetmind_ai.config import settings
-from meetmind_ai.core.audio_capture import AudioCapture
-from meetmind_ai.core.diarization import Diarization
-from meetmind_ai.core.emailer import Emailer
-from meetmind_ai.core.exporter import Exporter
-from meetmind_ai.core.merger import Merger
-from meetmind_ai.core.stt_engine import STTEngine
-from meetmind_ai.core.summarizer import Summarizer
+try:
+    from pydub import AudioSegment
+except Exception:
+    AudioSegment = None
+
+from config import settings
+from core.audio_capture import AudioCapture
+from core.diarization import Diarization
+from core.emailer import Emailer
+from core.exporter import Exporter
+from core.merger import Merger
+from core.stt_engine import STTEngine
+from core.summarizer import Summarizer
 
 app = Flask(__name__)
 
@@ -100,7 +106,7 @@ def _get_summarizer():
 def _get_wer_eval():
     global wer_eval
     if wer_eval is None:
-        from meetmind_ai.evaluation.wer_evaluator import WEREvaluator
+        from evaluation.wer_evaluator import WEREvaluator
 
         wer_eval = WEREvaluator()
     return wer_eval
@@ -109,7 +115,7 @@ def _get_wer_eval():
 def _get_der_eval():
     global der_eval
     if der_eval is None:
-        from meetmind_ai.evaluation.der_evaluator import DEREvaluator
+        from evaluation.der_evaluator import DEREvaluator
 
         der_eval = DEREvaluator()
     return der_eval
@@ -118,7 +124,7 @@ def _get_der_eval():
 def _get_rouge_eval():
     global rouge_eval
     if rouge_eval is None:
-        from meetmind_ai.evaluation.rouge_evaluator import ROUGEEvaluator
+        from evaluation.rouge_evaluator import ROUGEEvaluator
 
         rouge_eval = ROUGEEvaluator()
     return rouge_eval
@@ -134,6 +140,33 @@ def _unique_output_path(prefix: str, extension: str) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     ext = extension.lstrip(".")
     return os.path.join(settings.OUTPUTS_DIR, f"{prefix}_{timestamp}.{ext}")
+
+
+def _convert_audio_to_wav(input_path: str, output_path: str):
+    # Prefer pydub when available; otherwise fall back to ffmpeg CLI.
+    if AudioSegment is not None:
+        audio = AudioSegment.from_file(input_path)
+        audio.export(output_path, format="wav")
+        return
+
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if not ffmpeg_bin:
+        raise RuntimeError(
+            "Audio conversion requires either pydub audio backends or ffmpeg in PATH. "
+            "Install ffmpeg or use Python <= 3.12 with audioop support."
+        )
+
+    command = [
+        ffmpeg_bin,
+        "-y",
+        "-i",
+        input_path,
+        output_path,
+    ]
+    proc = subprocess.run(command, capture_output=True, text=True)
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        raise RuntimeError(stderr or "ffmpeg conversion failed.")
 
 
 def _format_seconds_mss(seconds: float) -> str:
@@ -381,8 +414,7 @@ def upload_file():
     else:
         wav_path = _unique_temp_path(safe_prefix, "wav")
         try:
-            audio = AudioSegment.from_file(input_path)
-            audio.export(wav_path, format="wav")
+            _convert_audio_to_wav(input_path, wav_path)
         except Exception as exc:
             return jsonify({"error": f"Audio conversion to WAV failed: {exc}"}), 500
 

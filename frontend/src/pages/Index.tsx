@@ -36,7 +36,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background mesh-bg">
-      <div className="max-w-6xl mx-auto px-4 md:px-8 pt-8">
+      <div className="w-full px-4 md:px-8 pt-8">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeModule}

@@ -2,7 +2,7 @@ import os
 
 from whitenoise import WhiteNoise
 
-from meetmind_ai.api.server import app
+from api.server import app
 
 
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))

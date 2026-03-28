@@ -94,7 +94,7 @@ const BentoDashboard = ({ onModuleChange }: BentoDashboardProps) => {
           >
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">{stat.label}</p>
             <div>
-              <p className="text-3xl font-heading font-extrabold text-foreground">{stat.value}</p>
+              <p className="text-xl md:text-2xl font-heading font-bold text-foreground tracking-tight">{stat.value}</p>
               <p className="text-xs text-camel-DEFAULT mt-1">{stat.sub}</p>
             </div>
           </motion.div>
