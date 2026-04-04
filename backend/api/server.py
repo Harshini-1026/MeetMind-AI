@@ -15,6 +15,11 @@ try:
 except Exception:
     AudioSegment = None
 
+try:
+    from imageio_ffmpeg import get_ffmpeg_exe
+except Exception:
+    get_ffmpeg_exe = None
+
 from config import settings
 from core.audio_capture import AudioCapture
 from core.diarization import Diarization
@@ -143,30 +148,45 @@ def _unique_output_path(prefix: str, extension: str) -> str:
 
 
 def _convert_audio_to_wav(input_path: str, output_path: str):
-    # Prefer pydub when available; otherwise fall back to ffmpeg CLI.
+    # Prefer ffmpeg CLI conversion to avoid loading large media fully into memory.
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if not ffmpeg_bin and get_ffmpeg_exe is not None:
+        try:
+            ffmpeg_bin = get_ffmpeg_exe()
+        except Exception:
+            ffmpeg_bin = None
+
+    if ffmpeg_bin:
+        command = [
+            ffmpeg_bin,
+            "-y",
+            "-i",
+            input_path,
+            "-vn",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            str(settings.AUDIO_SAMPLE_RATE),
+            "-ac",
+            str(settings.AUDIO_CHANNELS),
+            output_path,
+        ]
+        proc = subprocess.run(command, capture_output=True, text=True)
+        if proc.returncode != 0:
+            stderr = (proc.stderr or "").strip()
+            raise RuntimeError(stderr or "ffmpeg conversion failed.")
+        return
+
+    # Fallback: pydub conversion when ffmpeg binary is unavailable.
     if AudioSegment is not None:
         audio = AudioSegment.from_file(input_path)
+        audio = audio.set_frame_rate(settings.AUDIO_SAMPLE_RATE).set_channels(settings.AUDIO_CHANNELS)
         audio.export(output_path, format="wav")
         return
 
-    ffmpeg_bin = shutil.which("ffmpeg")
-    if not ffmpeg_bin:
-        raise RuntimeError(
-            "Audio conversion requires either pydub audio backends or ffmpeg in PATH. "
-            "Install ffmpeg or use Python <= 3.12 with audioop support."
-        )
-
-    command = [
-        ffmpeg_bin,
-        "-y",
-        "-i",
-        input_path,
-        output_path,
-    ]
-    proc = subprocess.run(command, capture_output=True, text=True)
-    if proc.returncode != 0:
-        stderr = (proc.stderr or "").strip()
-        raise RuntimeError(stderr or "ffmpeg conversion failed.")
+    raise RuntimeError(
+        "Audio conversion requires ffmpeg. Install ffmpeg on the server or keep uploads as .wav files."
+    )
 
 
 def _format_seconds_mss(seconds: float) -> str:
