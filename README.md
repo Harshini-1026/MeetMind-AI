@@ -53,7 +53,7 @@ Frontend:
 
 ## Prerequisites
 
-- Python 3.14.x (pinned for deploy compatibility in backend/.python-version)
+- Python 3.11.x (pinned in backend/.python-version for Render compatibility)
 - Node.js 18+ and npm
 - FFmpeg installed and available in PATH (required by pydub for media conversion)
 
@@ -114,7 +114,7 @@ From the backend folder:
 Commands:
 
 - Windows PowerShell:
-  - py -3.14 -m venv .venv
+  - py -3.11 -m venv .venv
   - .\.venv\Scripts\Activate.ps1
   - pip install -r requirements.txt
   - py app.py
@@ -131,6 +131,22 @@ From the frontend folder:
 Frontend runs on: http://127.0.0.1:8080
 
 Vite proxies /api requests to VITE_API_URL in development.
+
+### One-Terminal Run (Production-like)
+
+From the project root, build frontend once, then run backend in the same terminal:
+
+- Windows PowerShell:
+  - cd frontend
+  - npm install
+  - npm run build
+  - cd ..\backend
+  - py -3.11 -m venv .venv
+  - .\.venv\Scripts\Activate.ps1
+  - pip install -r requirements.txt
+  - py app.py
+
+This runs both UI and API on one port through Flask at: http://127.0.0.1:5000
 
 ## API Overview
 
@@ -155,12 +171,24 @@ Health route:
 
 ## Deployment Notes (Render)
 
-If deploying backend to Render:
+Recommended: single Render Web Service using the root render.yaml blueprint.
+
+Render install/build command:
+
+- pip install -r requirements.txt
+- cd ../frontend
+- npm install
+- npm run build
+
+Render start command:
+
+- gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 300
+
+Render service settings:
 
 - Root directory: backend
-- Build command: pip install -r requirements.txt
-- Start command: python app.py
-- Python version: controlled by backend/.python-version (3.14.3)
+- Python version: 3.11.11 (set via PYTHON_VERSION env var or backend/.python-version)
+- Required env vars: HUGGINGFACE_TOKEN, GROQ_API_KEY
 
 Important:
 
@@ -181,7 +209,7 @@ Generated artifacts are stored in backend/outputs, including:
 ## Troubleshooting
 
 - Build fails on torch version:
-  - Ensure Python 3.14.3 is used in backend deploy.
+  - Ensure Python 3.11.11 is used in backend deploy.
 - Live recording does not work on server:
   - Live mic capture is intended for local environments with audio hardware and PyAudio.
 - Upload conversion fails:

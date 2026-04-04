@@ -1,33 +1,38 @@
 import os
 
 
-def _load_dotenv_from_project_root() -> None:
-	"""Load key=value pairs from project .env into process env if unset."""
+def _load_dotenv_candidates() -> None:
+	"""Load key=value pairs from backend/.env or repo .env into env if unset."""
 	config_dir = os.path.dirname(__file__)
 	package_dir = os.path.dirname(config_dir)
 	project_root = os.path.dirname(package_dir)
-	env_path = os.path.join(project_root, ".env")
 
-	if not os.path.isfile(env_path):
-		return
+	env_candidates = [
+		os.path.join(package_dir, ".env"),
+		os.path.join(project_root, ".env"),
+	]
 
-	try:
-		with open(env_path, "r", encoding="utf-8") as env_file:
-			for raw_line in env_file:
-				line = raw_line.strip()
-				if not line or line.startswith("#") or "=" not in line:
-					continue
+	for env_path in env_candidates:
+		if not os.path.isfile(env_path):
+			continue
 
-				key, value = line.split("=", 1)
-				key = key.strip()
-				value = value.strip().strip('"').strip("'")
+		try:
+			with open(env_path, "r", encoding="utf-8") as env_file:
+				for raw_line in env_file:
+					line = raw_line.strip()
+					if not line or line.startswith("#") or "=" not in line:
+						continue
 
-				# Keep explicit process env values higher priority.
-				if key and key not in os.environ:
-					os.environ[key] = value
-	except OSError:
-		# If .env cannot be read, continue with normal env lookups.
-		pass
+					key, value = line.split("=", 1)
+					key = key.strip()
+					value = value.strip().strip('"').strip("'")
+
+					# Keep explicit process env values higher priority.
+					if key and key not in os.environ:
+						os.environ[key] = value
+		except OSError:
+			# If .env cannot be read, continue with normal env lookups.
+			continue
 
 
 def _as_int(name: str, default: int) -> int:
@@ -58,7 +63,7 @@ def _as_csv_many(*names: str) -> list[str]:
 	return values
 
 
-_load_dotenv_from_project_root()
+_load_dotenv_candidates()
 
 AUDIO_SAMPLE_RATE = _as_int("AUDIO_SAMPLE_RATE", 16000)
 AUDIO_CHANNELS = _as_int("AUDIO_CHANNELS", 1)
