@@ -53,7 +53,7 @@ Frontend:
 
 ## Prerequisites
 
-- Python 3.11.x (pinned in backend/.python-version for Render compatibility)
+- Python 3.14.3 (pinned in backend/.python-version and .python-version)
 - Node.js 18+ and npm
 - FFmpeg installed and available in PATH (required by pydub for media conversion)
 
@@ -114,7 +114,7 @@ From the backend folder:
 Commands:
 
 - Windows PowerShell:
-  - py -3.11 -m venv .venv
+  - py -3.14 -m venv .venv
   - .\.venv\Scripts\Activate.ps1
   - pip install -r requirements.txt
   - py app.py
@@ -141,7 +141,7 @@ From the project root, build frontend once, then run backend in the same termina
   - npm install
   - npm run build
   - cd ..\backend
-  - py -3.11 -m venv .venv
+  - py -3.14 -m venv .venv
   - .\.venv\Scripts\Activate.ps1
   - pip install -r requirements.txt
   - py app.py
@@ -187,7 +187,7 @@ Render start command:
 Render service settings:
 
 - Root directory: backend
-- Python version: 3.11.11 (set via PYTHON_VERSION env var or backend/.python-version)
+- Python version: 3.14.3 (set via PYTHON_VERSION env var or backend/.python-version)
 - Required env vars: HUGGINGFACE_TOKEN, GROQ_API_KEY
 - Optional env vars:
   - MAX_UPLOAD_BYTES (default 104857600, i.e. 100 MB)
@@ -212,13 +212,14 @@ Generated artifacts are stored in backend/outputs, including:
 ## Troubleshooting
 
 - Build fails on torch version:
-  - Ensure Python 3.11.11 is used in backend deploy.
+  - Ensure Python 3.14.3 is used in backend deploy.
 - Live recording does not work on server:
   - Live mic capture is intended for local environments with audio hardware and PyAudio.
   - On Render, `/api/start-recording` is intentionally disabled by default and returns a handled 503.
   - Use the Upload flow (`/api/upload` + `/api/run-pipeline`) for cloud deployments.
 - Upload conversion fails:
   - Verify FFmpeg is installed and available in PATH.
+  - On Python 3.14+, `audioop` was removed from stdlib; this project pins `audioop-lts` in `backend/requirements.txt` to keep `pydub` compatible.
 - Diarization or summary is empty:
   - Check HUGGINGFACE_TOKEN and GROQ_API_KEY in backend/.env.
 
