@@ -29,7 +29,21 @@ from core.merger import Merger
 from core.stt_engine import STTEngine
 from core.summarizer import Summarizer
 
+
+def _is_truthy(value: str) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+IS_RENDER_ENV = bool(os.getenv("RENDER") or os.getenv("RENDER_EXTERNAL_URL"))
+ALLOW_SERVER_MIC_RECORDING = _is_truthy(os.getenv("ENABLE_SERVER_MIC_RECORDING", "")) or not IS_RENDER_ENV
+try:
+    MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
+except ValueError:
+    MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+
+
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 
 cors_origins = settings.CORS_ALLOWED_ORIGINS or ["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:5173", "http://127.0.0.1:5173"]
 CORS(
@@ -187,6 +201,17 @@ def _convert_audio_to_wav(input_path: str, output_path: str):
     raise RuntimeError(
         "Audio conversion requires ffmpeg. Install ffmpeg on the server or keep uploads as .wav files."
     )
+
+
+def _ensure_wav_path(audio_path: str) -> str:
+    _, ext = os.path.splitext(audio_path)
+    if ext.lower() == ".wav":
+        return audio_path
+
+    source_name = os.path.splitext(os.path.basename(audio_path))[0] or "upload"
+    wav_path = _unique_temp_path(secure_filename(source_name), "wav")
+    _convert_audio_to_wav(audio_path, wav_path)
+    return wav_path
 
 
 def _format_seconds_mss(seconds: float) -> str:
@@ -353,6 +378,16 @@ def frontend(path: str):
 def start_recording():
     global stt_engine
 
+    if not ALLOW_SERVER_MIC_RECORDING:
+        return jsonify(
+            {
+                "error": (
+                    "Live server microphone recording is disabled in this deployment. "
+                    "Use the Upload workflow to process local audio/video files."
+                )
+            }
+        ), 503
+
     existing_capture = app.config.get("AUDIO_CAPTURE")
     if existing_capture is not None:
         try:
@@ -368,7 +403,13 @@ def start_recording():
 
     audio_queue = Queue()
     capture = AudioCapture(audio_queue)
+    if not capture.is_available:
+        reason = capture.availability_reason or "No input audio device is available."
+        return jsonify({"error": f"Live recording unavailable: {reason}"}), 503
+
     stt_engine = STTEngine(audio_queue, _live_transcript_callback)
+    if stt_engine.model is None:
+        return jsonify({"error": "Could not initialize speech-to-text model for live transcription."}), 503
 
     app.config["LAST_TRANSCRIPT"] = ""
     capture.start_recording()
@@ -409,6 +450,9 @@ def stop_recording():
 
 @app.post("/api/upload")
 def upload_file():
+    if request.content_length and request.content_length > MAX_UPLOAD_BYTES:
+        return jsonify({"error": f"File is too large. Max upload size is {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."}), 413
+
     if "file" not in request.files:
         return jsonify({"error": "Missing file field in multipart form data."}), 400
 
@@ -427,19 +471,9 @@ def upload_file():
     except Exception as exc:
         return jsonify({"error": f"Could not save uploaded file: {exc}"}), 500
 
-    ext = f".{original_ext}"
-
-    if ext == ".wav":
-        wav_path = input_path
-    else:
-        wav_path = _unique_temp_path(safe_prefix, "wav")
-        try:
-            _convert_audio_to_wav(input_path, wav_path)
-        except Exception as exc:
-            return jsonify({"error": f"Audio conversion to WAV failed: {exc}"}), 500
-
-    app.config["LAST_WAV_PATH"] = wav_path
-    return jsonify({"wav_path": wav_path})
+    # Defer conversion so upload returns fast and avoids gateway timeouts on large files.
+    app.config["LAST_WAV_PATH"] = input_path
+    return jsonify({"wav_path": input_path, "uploaded_path": input_path})
 
 
 @app.get("/api/live-transcript")
@@ -455,10 +489,19 @@ def transcribe():
     if not wav_path:
         return jsonify({"error": "Missing 'wav_path' in request body."}), 400
 
-    transcript, timestamps = _get_stt_engine().transcribe_file(wav_path)
-    app.config["LAST_TRANSCRIPT"] = transcript
+    if not os.path.isfile(wav_path):
+        return jsonify({"error": f"Audio file not found: {wav_path}"}), 404
 
-    return jsonify({"transcript": transcript, "timestamps": timestamps})
+    try:
+        resolved_wav_path = _ensure_wav_path(wav_path)
+    except Exception as exc:
+        return jsonify({"error": f"Audio conversion to WAV failed: {exc}"}), 500
+
+    transcript, timestamps = _get_stt_engine().transcribe_file(resolved_wav_path)
+    app.config["LAST_TRANSCRIPT"] = transcript
+    app.config["LAST_WAV_PATH"] = resolved_wav_path
+
+    return jsonify({"transcript": transcript, "timestamps": timestamps, "wav_path": resolved_wav_path})
 
 
 @app.post("/api/diarize")
@@ -474,9 +517,14 @@ def diarize():
         return jsonify({"error": f"Diarization unavailable: {diarizer_instance.last_error}"}), 503
 
     if not os.path.isfile(wav_path):
-        return jsonify({"error": f"WAV file not found: {wav_path}"}), 404
+        return jsonify({"error": f"Audio file not found: {wav_path}"}), 404
 
-    segments = diarizer_instance.run(wav_path)
+    try:
+        resolved_wav_path = _ensure_wav_path(wav_path)
+    except Exception as exc:
+        return jsonify({"error": f"Audio conversion to WAV failed: {exc}"}), 500
+
+    segments = diarizer_instance.run(resolved_wav_path)
     if not segments and diarizer_instance.last_error:
         return jsonify({"error": diarizer_instance.last_error, "segments": []}), 422
 
@@ -485,10 +533,11 @@ def diarize():
         with open(diarization_path, "w", encoding="utf-8") as diarization_file:
             json.dump(segments, diarization_file, indent=2)
         app.config["LAST_DIARIZATION_PATH"] = diarization_path
+        app.config["LAST_WAV_PATH"] = resolved_wav_path
     except OSError as exc:
         return jsonify({"error": f"Failed to save diarization output: {exc}", "segments": segments}), 500
 
-    return jsonify({"segments": segments, "diarization_path": diarization_path})
+    return jsonify({"segments": segments, "diarization_path": diarization_path, "wav_path": resolved_wav_path})
 
 
 @app.post("/api/wav-to-conversation")
@@ -500,9 +549,14 @@ def wav_to_conversation():
         return jsonify({"error": "Missing 'wav_path' and no previous WAV found."}), 400
 
     if not os.path.isfile(wav_path):
-        return jsonify({"error": f"WAV file not found: {wav_path}"}), 404
+        return jsonify({"error": f"Audio file not found: {wav_path}"}), 404
 
-    transcript, timestamps = _get_stt_engine().transcribe_file(wav_path)
+    try:
+        resolved_wav_path = _ensure_wav_path(wav_path)
+    except Exception as exc:
+        return jsonify({"error": f"Audio conversion to WAV failed: {exc}"}), 500
+
+    transcript, timestamps = _get_stt_engine().transcribe_file(resolved_wav_path)
     if not transcript:
         return jsonify({"error": "STT transcription failed or returned empty output."}), 422
 
@@ -510,7 +564,7 @@ def wav_to_conversation():
     if not diarizer_instance.is_available():
         return jsonify({"error": f"Diarization unavailable: {diarizer_instance.last_error}"}), 503
 
-    segments = diarizer_instance.run(wav_path)
+    segments = diarizer_instance.run(resolved_wav_path)
     if not segments:
         reason = diarizer_instance.last_error or "No diarization segments were generated."
         return jsonify({"error": reason}), 422
@@ -529,11 +583,11 @@ def wav_to_conversation():
 
     app.config["LAST_TRANSCRIPT"] = transcript
     app.config["LAST_DIARIZED_TRANSCRIPT"] = conversation_text
-    app.config["LAST_WAV_PATH"] = wav_path
+    app.config["LAST_WAV_PATH"] = resolved_wav_path
 
     return jsonify(
         {
-            "wav_path": wav_path,
+            "wav_path": resolved_wav_path,
             "conversation_text": conversation_text,
             "conversation_txt_path": conversation_txt_path,
             "segments": segments,
@@ -554,9 +608,14 @@ def run_pipeline():
         return jsonify({"error": "Missing 'wav_path' and no previous WAV found."}), 400
 
     if not os.path.isfile(wav_path):
-        return jsonify({"error": f"WAV file not found: {wav_path}"}), 404
+        return jsonify({"error": f"Audio file not found: {wav_path}"}), 404
 
-    transcript, timestamps = _get_stt_engine().transcribe_file(wav_path)
+    try:
+        resolved_wav_path = _ensure_wav_path(wav_path)
+    except Exception as exc:
+        return jsonify({"error": f"Audio conversion to WAV failed: {exc}"}), 500
+
+    transcript, timestamps = _get_stt_engine().transcribe_file(resolved_wav_path)
     if not transcript:
         return jsonify({"error": "STT transcription failed or returned empty output."}), 422
 
@@ -564,7 +623,7 @@ def run_pipeline():
     if not diarizer_instance.is_available():
         return jsonify({"error": f"Diarization unavailable: {diarizer_instance.last_error}"}), 503
 
-    segments = diarizer_instance.run(wav_path)
+    segments = diarizer_instance.run(resolved_wav_path)
     if not segments:
         reason = diarizer_instance.last_error or "No diarization segments were generated."
         return jsonify({"error": reason}), 422
@@ -601,7 +660,7 @@ def run_pipeline():
         f"{key_points}"
     )
 
-    app.config["LAST_WAV_PATH"] = wav_path
+    app.config["LAST_WAV_PATH"] = resolved_wav_path
     app.config["LAST_TRANSCRIPT"] = transcript
     app.config["LAST_DIARIZED_TRANSCRIPT"] = conversation_text
     app.config["LAST_DIARIZATION_PATH"] = diarization_path
@@ -611,7 +670,7 @@ def run_pipeline():
 
     return jsonify(
         {
-            "wav_path": wav_path,
+            "wav_path": resolved_wav_path,
             "transcript": transcript,
             "segments": segments,
             "diarization_path": diarization_path,

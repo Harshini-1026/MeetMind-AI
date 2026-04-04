@@ -25,9 +25,26 @@ class AudioCapture:
         self._stop_event = threading.Event()
         self._frames_lock = threading.Lock()
         self._is_available = sd is not None
+        self._availability_reason = ""
 
         if not self._is_available:
+            self._availability_reason = "sounddevice is not installed in this environment."
             print("[AudioCapture] sounddevice is not installed. Live recording is unavailable on this environment.")
+            return
+
+        # On cloud/container hosts sounddevice may import fine but no input device exists.
+        try:
+            devices = sd.query_devices()
+            has_input = any(int(device.get("max_input_channels", 0)) > 0 for device in devices)
+            if not has_input:
+                self._is_available = False
+                self._availability_reason = "No input audio device is available on this server."
+        except Exception as exc:
+            self._is_available = False
+            self._availability_reason = f"Could not query audio devices: {exc}"
+
+        if not self._is_available and self._availability_reason:
+            print(f"[AudioCapture] {self._availability_reason}")
 
     def start_recording(self) -> None:
         """Open the microphone stream and start callback-based recording."""
@@ -101,3 +118,11 @@ class AudioCapture:
                 print(f"[AudioCapture] Error closing stream: {exc}")
             finally:
                 self._stream = None
+
+    @property
+    def is_available(self) -> bool:
+        return self._is_available
+
+    @property
+    def availability_reason(self) -> str:
+        return self._availability_reason

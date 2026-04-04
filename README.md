@@ -189,6 +189,9 @@ Render service settings:
 - Root directory: backend
 - Python version: 3.11.11 (set via PYTHON_VERSION env var or backend/.python-version)
 - Required env vars: HUGGINGFACE_TOKEN, GROQ_API_KEY
+- Optional env vars:
+  - MAX_UPLOAD_BYTES (default 104857600, i.e. 100 MB)
+  - ENABLE_SERVER_MIC_RECORDING (default disabled on Render; enable only when server has a real audio input device)
 
 Important:
 
@@ -212,6 +215,8 @@ Generated artifacts are stored in backend/outputs, including:
   - Ensure Python 3.11.11 is used in backend deploy.
 - Live recording does not work on server:
   - Live mic capture is intended for local environments with audio hardware and PyAudio.
+  - On Render, `/api/start-recording` is intentionally disabled by default and returns a handled 503.
+  - Use the Upload flow (`/api/upload` + `/api/run-pipeline`) for cloud deployments.
 - Upload conversion fails:
   - Verify FFmpeg is installed and available in PATH.
 - Diarization or summary is empty:
